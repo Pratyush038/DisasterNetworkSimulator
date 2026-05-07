@@ -1,4 +1,5 @@
 import express, { type NextFunction, type Request, type Response } from "express";
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { log } from "./vite";
 
@@ -7,6 +8,12 @@ export async function createApp() {
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
+  app.use(
+    cors({
+      origin: process.env.CORS_ORIGIN,
+      credentials: true,
+    }),
+  );
 
   app.use((req, res, next) => {
     const start = Date.now();
