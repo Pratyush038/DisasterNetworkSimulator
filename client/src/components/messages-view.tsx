@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -26,16 +27,20 @@ export function MessagesView() {
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
+  const {
+    data: messages = [],
+    isLoading: messagesLoading,
+    isError: messagesError,
+  } = useQuery<Message[]>({
     queryKey: ["/api/messages"],
     refetchInterval: 2000,
   });
 
-  const { data: nodes = [] } = useQuery<NetworkNode[]>({
+  const { data: nodes = [], isError: nodesError } = useQuery<NetworkNode[]>({
     queryKey: ["/api/nodes"],
   });
 
-  const { data: connections = [] } = useQuery<NetworkConnection[]>({
+  const { data: connections = [], isError: connectionsError } = useQuery<NetworkConnection[]>({
     queryKey: ["/api/connections"],
   });
 
@@ -48,6 +53,10 @@ export function MessagesView() {
 
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
+      if (nodesError || connectionsError) {
+        throw new Error("Network topology is unavailable");
+      }
+
       // Find the best target node (closest online node)
       const onlineNodes = nodes.filter(node => node.isOnline && node.nodeId !== "user");
       const targetNode = onlineNodes.length > 0 ? onlineNodes[0] : null;
@@ -127,12 +136,12 @@ export function MessagesView() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white pb-20">
+    <div className="flex h-full flex-col bg-slate-50 pb-20">
       {/* Messages Header */}
-      <CardHeader className="border-b border-gray-200">
+      <CardHeader className="border-b border-slate-200 bg-white">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">Messages</CardTitle>
-          <Button 
+          <Button
             variant="ghost" 
             size="sm"
             onClick={async () => {
@@ -163,7 +172,15 @@ export function MessagesView() {
       {/* Message List */}
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-4">
-          {messages.length === 0 ? (
+          {messagesError ? (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Messages unavailable</AlertTitle>
+              <AlertDescription>
+                The message API did not respond. Check the dev server and try again.
+              </AlertDescription>
+            </Alert>
+          ) : messages.length === 0 ? (
             <div className="text-center py-8">
               <div className="text-gray-400 mb-2">
                 <User className="h-12 w-12 mx-auto" />
@@ -179,7 +196,7 @@ export function MessagesView() {
               if (isSystemMessage) {
                 return (
                   <div key={message.id} className="flex justify-center">
-                    <div className="bg-yellow-100 border border-yellow-200 rounded-lg p-2 text-xs text-center max-w-xs">
+                    <div className="max-w-xs rounded-lg border border-amber-200 bg-amber-50 p-2 text-center text-xs text-amber-900">
                       <Info className="h-3 w-3 text-yellow-600 mr-1 inline" />
                       {message.content}
                     </div>
@@ -272,20 +289,20 @@ export function MessagesView() {
       </ScrollArea>
 
       {/* Message Input */}
-      <div className="border-t border-gray-200 p-4 bg-white">
+      <div className="border-t border-slate-200 bg-white p-4">
         <div className="flex items-center space-x-2">
           <Input
             type="text"
             placeholder="Type emergency message..."
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
             className="flex-1"
-            disabled={sendMessageMutation.isPending}
+            disabled={sendMessageMutation.isPending || messagesError}
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!messageInput.trim() || sendMessageMutation.isPending}
+            disabled={!messageInput.trim() || sendMessageMutation.isPending || messagesError}
             className="w-10 h-10 p-0"
           >
             <Send className="h-4 w-4" />

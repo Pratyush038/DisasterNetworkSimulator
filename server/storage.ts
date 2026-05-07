@@ -270,10 +270,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMessagesByNode(nodeId: string): Promise<Message[]> {
-    const query = db.select().from(messages)
-      .where(eq(messages.senderId, nodeId))
-      .orderBy(messages.timestamp);
-    return await query;
+    const allMessages = await db.select().from(messages).orderBy(messages.timestamp);
+    return allMessages.filter(
+      (message: Message) =>
+        message.senderId === nodeId || message.receiverId === nodeId,
+    );
   }
 
   async createMessage(message: InsertMessage): Promise<Message> {
@@ -296,8 +297,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getConnectionsForNode(nodeId: string): Promise<NetworkConnection[]> {
-    return await db.select().from(networkConnections)
-      .where(eq(networkConnections.fromNodeId, nodeId));
+    const connections = await db.select().from(networkConnections);
+    return connections.filter(
+      (connection: NetworkConnection) =>
+        connection.fromNodeId === nodeId || connection.toNodeId === nodeId,
+    );
   }
 
   async createConnection(connection: InsertNetworkConnection): Promise<NetworkConnection> {
@@ -309,10 +313,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateConnectionStatus(fromNodeId: string, toNodeId: string, isActive: boolean): Promise<void> {
-    await db
-      .update(networkConnections)
-      .set({ isActive })
-      .where(eq(networkConnections.fromNodeId, fromNodeId));
+    const connections = await db.select().from(networkConnections);
+    const connection = connections.find(
+      (item: NetworkConnection) =>
+        item.fromNodeId === fromNodeId && item.toNodeId === toNodeId,
+    );
+
+    if (connection) {
+      connection.isActive = isActive;
+    }
   }
 
   async clearAllMessages(): Promise<void> {

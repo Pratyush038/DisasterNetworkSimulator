@@ -4,6 +4,20 @@ import { storage } from "./storage";
 import { insertMessageSchema, insertNetworkNodeSchema } from "@shared/schema";
 import { z } from "zod";
 
+const nodeStatusSchema = z.object({
+  isOnline: z.boolean(),
+  signalStrength: z.number().int().min(0).max(100).optional(),
+});
+
+const sosSchema = z.object({
+  senderId: z.string().min(1),
+  location: z.object({
+    latitude: z.number(),
+    longitude: z.number(),
+  }),
+  content: z.string().min(1).optional(),
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Network nodes routes
   app.get("/api/nodes", async (req, res) => {
@@ -42,10 +56,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/nodes/:nodeId/status", async (req, res) => {
     try {
-      const { isOnline, signalStrength } = req.body;
+      const { isOnline, signalStrength } = nodeStatusSchema.parse(req.body);
       await storage.updateNodeStatus(req.params.nodeId, isOnline, signalStrength);
       res.json({ message: "Node status updated" });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid node status", errors: error.errors });
+      }
       res.status(500).json({ message: "Failed to update node status" });
     }
   });
@@ -103,7 +120,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/messages/:messageId/delivered", async (req, res) => {
     try {
-      await storage.markMessageDelivered(parseInt(req.params.messageId));
+      const messageId = Number(req.params.messageId);
+      if (!Number.isInteger(messageId)) {
+        return res.status(400).json({ message: "Invalid message id" });
+      }
+
+      await storage.markMessageDelivered(messageId);
       res.json({ message: "Message marked as delivered" });
     } catch (error) {
       res.status(500).json({ message: "Failed to update message status" });
@@ -122,7 +144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // SOS broadcast endpoint
   app.post("/api/sos", async (req, res) => {
     try {
-      const { senderId, location, content } = req.body;
+      const { senderId, location, content } = sosSchema.parse(req.body);
       
       // Get all online nodes for broadcasting
       const nodes = await storage.getAllNodes();
@@ -148,6 +170,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         messages: sosMessages 
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid SOS payload", errors: error.errors });
+      }
       res.status(500).json({ message: "Failed to broadcast SOS" });
     }
   });

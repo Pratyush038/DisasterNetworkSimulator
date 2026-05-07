@@ -10,10 +10,10 @@ interface BottomNavigationProps {
 
 export function BottomNavigation({ activeTab, onTabChange, unreadCount }: BottomNavigationProps) {
   const tabs = [
-    { id: "home", label: "Home", icon: Home },
-    { id: "maps", label: "Maps", icon: Map },
-    { id: "messages", label: "Messages", icon: MessageCircle },
-    { id: "settings", label: "Settings", icon: Settings },
+    { id: "home", label: "Home", icon: Home, path: "/app" },
+    { id: "maps", label: "Maps", icon: Map, path: "/maps" },
+    { id: "messages", label: "Messages", icon: MessageCircle, path: "/messages" },
+    { id: "settings", label: "Settings", icon: Settings, path: "/settings" },
   ];
 
   return (
@@ -27,7 +27,7 @@ export function BottomNavigation({ activeTab, onTabChange, unreadCount }: Bottom
             <Button
               key={tab.id}
               variant="ghost"
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => onTabChange(tab.path)}
               className={`flex flex-col items-center py-1 px-3 h-auto ${
                 isActive 
                   ? "text-blue-600" 

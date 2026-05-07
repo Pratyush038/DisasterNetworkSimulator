@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import "mapbox-gl/dist/mapbox-gl.css";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useQuery } from "@tanstack/react-query";
 import type { NetworkNode, NetworkConnection, NetworkStats } from "@/types/network";
 import { locationService } from "@/lib/location-service";
+import { formatRounded } from "@/lib/utils";
 import { 
   MapPin, 
   Signal, 
@@ -31,6 +33,7 @@ export default function Maps() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
+  const currentStyleRef = useRef("mapbox://styles/mapbox/streets-v12");
   
   const [gpsLocation, setGpsLocation] = useState<{
     latitude: number;
@@ -42,6 +45,8 @@ export default function Maps() {
   const [emergencyMode, setEmergencyMode] = useState(false);
   const [show3D, setShow3D] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [styleRevision, setStyleRevision] = useState(0);
 
   const { data: nodes = [] } = useQuery<NetworkNode[]>({
     queryKey: ["/api/nodes"],
@@ -58,24 +63,81 @@ export default function Maps() {
     refetchInterval: 2000,
   });
 
+  const getFallbackNodePosition = (node: NetworkNode) => {
+    const centerLat = 12.9249;
+    const centerLon = 77.4996;
+    const x = (node.longitude - centerLon) * 8500 + 50;
+    const y = (centerLat - node.latitude) * 8500 + 50;
+
+    return {
+      x: Math.max(8, Math.min(92, x)),
+      y: Math.max(10, Math.min(90, y)),
+    };
+  };
+
+  const addBuildingsLayer = (map: any) => {
+    if (!map.getSource("composite") || map.getLayer("3d-buildings")) return;
+
+    map.addLayer({
+      id: "3d-buildings",
+      source: "composite",
+      "source-layer": "building",
+      filter: ["==", "extrude", "true"],
+      type: "fill-extrusion",
+      minzoom: 14,
+      paint: {
+        "fill-extrusion-color": "#aaa",
+        "fill-extrusion-height": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          15,
+          0,
+          15.05,
+          ["get", "height"],
+        ],
+        "fill-extrusion-base": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          15,
+          0,
+          15.05,
+          ["get", "min_height"],
+        ],
+        "fill-extrusion-opacity": 0.6,
+      },
+    });
+  };
+
   // Initialize Mapbox map
   useEffect(() => {
     const initMap = async () => {
       if (!mapRef.current || mapInstanceRef.current) return;
       
       try {
-        // Import Mapbox CSS
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css';
-        document.head.appendChild(link);
-        
+        const mapboxToken = import.meta.env.VITE_MAPBOX_API_KEY;
+        if (!mapboxToken) {
+          throw new Error("Mapbox token is not configured");
+        }
+
+        const tokenCheck = await fetch(
+          `https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${mapboxToken}`,
+        );
+
+        if (!tokenCheck.ok) {
+          const errorPayload = await tokenCheck.json().catch(() => null);
+          throw new Error(
+            errorPayload?.message || `Mapbox token check failed with HTTP ${tokenCheck.status}`,
+          );
+        }
+
         // Import Mapbox GL
         const mapbox = await import('mapbox-gl');
         mapboxgl = mapbox.default;
         
         // Set access token
-        mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_API_KEY;
+        mapboxgl.accessToken = mapboxToken;
         
         // Use current GPS location or fallback to RV College
         const centerLng = gpsLocation?.longitude || 77.4996;
@@ -105,48 +167,23 @@ export default function Maps() {
         });
         map.addControl(geolocateControl, 'top-right');
 
+        map.on("error", (event: any) => {
+          const message = event?.error?.message || "Mapbox could not load map resources";
+          setMapError(message);
+        });
+
         // Wait for map to load
         map.on('load', () => {
           setMapLoaded(true);
-          
-          // Add 3D buildings layer
-          if (!map.getLayer('3d-buildings')) {
-            map.addLayer({
-              'id': '3d-buildings',
-              'source': 'composite',
-              'source-layer': 'building',
-              'filter': ['==', 'extrude', 'true'],
-              'type': 'fill-extrusion',
-              'minzoom': 14,
-              'paint': {
-                'fill-extrusion-color': '#aaa',
-                'fill-extrusion-height': [
-                  'interpolate',
-                  ['linear'],
-                  ['zoom'],
-                  15,
-                  0,
-                  15.05,
-                  ['get', 'height']
-                ],
-                'fill-extrusion-base': [
-                  'interpolate',
-                  ['linear'],
-                  ['zoom'],
-                  15,
-                  0,
-                  15.05,
-                  ['get', 'min_height']
-                ],
-                'fill-extrusion-opacity': 0.6
-              }
-            });
-          }
+          setMapError(null);
+          addBuildingsLayer(map);
+          setStyleRevision((revision) => revision + 1);
         });
 
         mapInstanceRef.current = map;
       } catch (error) {
-        console.log('Mapbox failed to initialize, using fallback view');
+        const message = error instanceof Error ? error.message : "Mapbox failed to initialize";
+        setMapError(message);
         setMapLoaded(false);
       }
     };
@@ -159,7 +196,7 @@ export default function Maps() {
         mapInstanceRef.current = null;
       }
     };
-  }, [gpsLocation]); // Re-initialize when GPS location changes
+  }, []);
 
   // Switch map styles
   useEffect(() => {
@@ -177,7 +214,17 @@ export default function Maps() {
         default:
           styleUrl = 'mapbox://styles/mapbox/streets-v12';
       }
-      
+      if (currentStyleRef.current === styleUrl) return;
+
+      currentStyleRef.current = styleUrl;
+      setMapLoaded(false);
+      map.once("style.load", () => {
+        addBuildingsLayer(map);
+        setMapLoaded(true);
+        setMapError(null);
+        setStyleRevision((revision) => revision + 1);
+      });
+
       map.setStyle(styleUrl);
     }
   }, [mapStyle, mapLoaded]);
@@ -240,6 +287,7 @@ export default function Maps() {
     if (!mapboxgl || !mapInstanceRef.current || !nodes.length || !mapLoaded) return;
 
     const map = mapInstanceRef.current;
+    if (!map.isStyleLoaded()) return;
 
     // Clear existing markers
     markersRef.current.forEach(marker => marker.remove());
@@ -268,46 +316,52 @@ export default function Maps() {
       return null;
     }).filter(Boolean);
 
-    // Update or add connections source
-    if (map.getSource('network-connections')) {
-      map.getSource('network-connections').setData({
-        type: 'FeatureCollection',
-        features: connectionFeatures
-      });
-    } else {
-      map.addSource('network-connections', {
-        type: 'geojson',
-        data: {
+    try {
+      // Update or add connections source
+      if (map.getSource('network-connections')) {
+        map.getSource('network-connections').setData({
           type: 'FeatureCollection',
           features: connectionFeatures
-        }
-      });
+        });
+      } else {
+        map.addSource('network-connections', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: connectionFeatures
+          }
+        });
 
-      // Add connection layers
-      map.addLayer({
-        id: 'active-connections',
-        type: 'line',
-        source: 'network-connections',
-        filter: ['==', ['get', 'isActive'], true],
-        paint: {
-          'line-color': '#10b981',
-          'line-width': 3,
-          'line-opacity': 0.8
-        }
-      });
+        // Add connection layers
+        map.addLayer({
+          id: 'active-connections',
+          type: 'line',
+          source: 'network-connections',
+          filter: ['==', ['get', 'isActive'], true],
+          paint: {
+            'line-color': '#10b981',
+            'line-width': 3,
+            'line-opacity': 0.8
+          }
+        });
 
-      map.addLayer({
-        id: 'inactive-connections',
-        type: 'line',
-        source: 'network-connections',
-        filter: ['==', ['get', 'isActive'], false],
-        paint: {
-          'line-color': '#6b7280',
-          'line-width': 2,
-          'line-opacity': 0.4,
-          'line-dasharray': [2, 2]
-        }
-      });
+        map.addLayer({
+          id: 'inactive-connections',
+          type: 'line',
+          source: 'network-connections',
+          filter: ['==', ['get', 'isActive'], false],
+          paint: {
+            'line-color': '#6b7280',
+            'line-width': 2,
+            'line-opacity': 0.4,
+            'line-dasharray': [2, 2]
+          }
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to render network overlays";
+      setMapError(message);
+      return;
     }
 
     // Add node markers
@@ -364,7 +418,7 @@ export default function Maps() {
             </div>
             <div class="flex justify-between">
               <span>Coordinates:</span>
-              <span class="text-gray-600 text-xs">${node.latitude.toFixed(4)}, ${node.longitude.toFixed(4)}</span>
+              <span class="text-gray-600 text-xs">${formatRounded(node.latitude, 4)}, ${formatRounded(node.longitude, 4)}</span>
             </div>
             ${emergencyMode ? '<div class="mt-2 p-2 bg-red-100 rounded text-red-700 text-xs font-bold">🚨 Emergency Mode Active</div>' : ''}
           </div>
@@ -378,7 +432,7 @@ export default function Maps() {
 
       markersRef.current.set(node.nodeId, marker);
     });
-  }, [nodes, connections, emergencyMode, mapLoaded]);
+  }, [nodes, connections, emergencyMode, mapLoaded, styleRevision]);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -387,11 +441,62 @@ export default function Maps() {
 
       {/* Fallback view if Mapbox fails */}
       {!mapLoaded && (
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-100 to-indigo-200 flex items-center justify-center z-10">
-          <div className="text-center">
-            <div className="text-4xl mb-4">🗺️</div>
-            <div className="text-lg font-semibold text-gray-700">Loading Map...</div>
-            <div className="text-sm text-gray-600 mt-2">RV College of Engineering Area</div>
+        <div className="absolute inset-0 z-10 bg-slate-100">
+          <div className="absolute inset-6 bottom-28 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            <svg viewBox="0 0 100 100" className="h-full w-full bg-[radial-gradient(circle_at_50%_45%,#dbeafe,transparent_34%),linear-gradient(135deg,#f8fafc,#e2e8f0)]">
+              {connections.map((connection) => {
+                const fromNode = nodes.find((node) => node.nodeId === connection.fromNodeId);
+                const toNode = nodes.find((node) => node.nodeId === connection.toNodeId);
+                if (!fromNode || !toNode) return null;
+
+                const from = getFallbackNodePosition(fromNode);
+                const to = getFallbackNodePosition(toNode);
+
+                return (
+                  <line
+                    key={connection.id}
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    stroke={connection.isActive ? "#10b981" : "#94a3b8"}
+                    strokeWidth={connection.isActive ? 0.45 : 0.3}
+                    strokeDasharray={connection.isActive ? undefined : "1.2 1.2"}
+                    opacity={connection.isActive ? 0.72 : 0.55}
+                  />
+                );
+              })}
+              {nodes.map((node) => {
+                const position = getFallbackNodePosition(node);
+                const color = node.nodeId === "user"
+                  ? "#2563eb"
+                  : node.isOnline
+                    ? "#10b981"
+                    : "#64748b";
+
+                return (
+                  <g key={node.nodeId}>
+                    <circle cx={position.x} cy={position.y} r="1.9" fill={color} stroke="#ffffff" strokeWidth="0.5" />
+                    <text x={position.x + 2.2} y={position.y + 0.6} fontSize="2.2" fill="#0f172a">
+                      {node.name}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          <div className="absolute left-1/2 top-1/2 w-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-slate-200 bg-white/95 p-5 text-center shadow-sm backdrop-blur">
+            <MapPin className="mx-auto mb-3 h-9 w-9 text-blue-600" />
+            <div className="text-lg font-semibold text-slate-900">Using local topology map</div>
+            <div className="mt-2 text-sm leading-6 text-slate-600">
+              {mapError || "Loading Mapbox resources"}
+            </div>
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-left text-xs leading-5 text-amber-900">
+              Your current Mapbox token was rejected by Mapbox. Add a valid public token to
+              <span className="font-semibold"> .env.local </span>
+              as <span className="font-semibold">VITE_MAPBOX_API_KEY</span>, then restart the dev server.
+            </div>
           </div>
         </div>
       )}
@@ -581,11 +686,11 @@ export default function Maps() {
               <>
                 <div>
                   <p className="font-medium">GPS Coordinates:</p>
-                  <p className="text-gray-600">{gpsLocation.latitude.toFixed(6)}°N, {gpsLocation.longitude.toFixed(6)}°E</p>
+                  <p className="text-gray-600">{formatRounded(gpsLocation.latitude, 4)}°N, {formatRounded(gpsLocation.longitude, 4)}°E</p>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>GPS Accuracy:</span>
-                  <span className="text-green-600">{gpsLocation.accuracy.toFixed(0)}m</span>
+                  <span className="text-green-600">{formatRounded(gpsLocation.accuracy)}m</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-center">
                   <div className="bg-green-100 p-2 rounded">
