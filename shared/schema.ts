@@ -29,6 +29,9 @@ export const messages = pgTable("messages", {
   hops: integer("hops").notNull().default(1),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
   isDelivered: boolean("is_delivered").notNull().default(false),
+  encrypted: boolean("encrypted").notNull().default(false),
+  signature: text("signature"),
+  senderPublicKey: text("sender_public_key"),
 });
 
 export const networkConnections = pgTable("network_connections", {

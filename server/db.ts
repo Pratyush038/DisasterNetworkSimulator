@@ -277,7 +277,10 @@ const mockData = {
       routingPath: ["rv-gate", "user"],
       hops: 1,
       timestamp: new Date(),
-      isDelivered: false
+      isDelivered: false,
+      encrypted: false,
+      signature: null,
+      senderPublicKey: null
     },
     {
       id: 2,
@@ -288,7 +291,10 @@ const mockData = {
       routingPath: ["hoskerehalli", "user"],
       hops: 1,
       timestamp: new Date(Date.now() - 1000 * 60 * 14),
-      isDelivered: false
+      isDelivered: false,
+      encrypted: false,
+      signature: null,
+      senderPublicKey: null
     },
     {
       id: 3,
@@ -299,7 +305,10 @@ const mockData = {
       routingPath: ["banashankari", "mysore-road", "user"],
       hops: 2,
       timestamp: new Date(Date.now() - 1000 * 60 * 29),
-      isDelivered: true
+      isDelivered: true,
+      encrypted: false,
+      signature: null,
+      senderPublicKey: null
     },
     {
       id: 4,
@@ -310,7 +319,10 @@ const mockData = {
       routingPath: ["vijayanagar", "nandini-layout", "rv-gate", "user"],
       hops: 3,
       timestamp: new Date(Date.now() - 1000 * 60 * 48),
-      isDelivered: true
+      isDelivered: true,
+      encrypted: false,
+      signature: null,
+      senderPublicKey: null
     },
     {
       id: 5,
@@ -321,7 +333,10 @@ const mockData = {
       routingPath: ["kengeri", "mysore-road", "user"],
       hops: 2,
       timestamp: new Date(Date.now() - 1000 * 60 * 66),
-      isDelivered: false
+      isDelivered: false,
+      encrypted: false,
+      signature: null,
+      senderPublicKey: null
     }
   ]
 };
@@ -412,6 +427,9 @@ const normalizeInsertedRows = (table: any, data: any): MockRow[] => {
     if (table === schema.messages) {
       insertedRow.timestamp = row.timestamp ?? new Date();
       insertedRow.isDelivered = row.isDelivered ?? false;
+      insertedRow.encrypted = row.encrypted ?? false;
+      insertedRow.signature = row.signature ?? null;
+      insertedRow.senderPublicKey = row.senderPublicKey ?? null;
     }
 
     return insertedRow;

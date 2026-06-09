@@ -28,6 +28,10 @@ export interface Message {
   hops: number;
   timestamp: Date;
   isDelivered: boolean;
+  encrypted?: boolean;
+  signature?: string;
+  senderPublicKey?: string;
+  integrityValid?: boolean;
 }
 
 export interface NetworkStats {

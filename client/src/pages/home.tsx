@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { NetworkConnection, NetworkNode, NetworkStats } from "@/types/network";
 import { networkSimulation } from "@/lib/network-simulation";
 import { locationService, type LocationData } from "@/lib/location-service";
+import { cryptoService, type CryptoStats } from "@/lib/crypto-service";
 import { MessagesView } from "@/components/messages-view";
 import { SettingsView } from "@/components/settings-view";
 import { SOSButton } from "@/components/sos-button";
@@ -16,7 +18,7 @@ import { MetricCard } from "@/components/dashboard/metric-card";
 import { NetworkOverview } from "@/components/dashboard/network-overview";
 import { NodeListCard } from "@/components/dashboard/node-list-card";
 import Maps from "./maps";
-import { Activity, MessageSquare, Play, Radio, Route } from "lucide-react";
+import { Activity, KeyRound, Lock, MessageSquare, Play, Radio, Route, ShieldCheck } from "lucide-react";
 
 const emptyStats: NetworkStats = {
   connectedNodes: 0,
@@ -40,6 +42,7 @@ export default function Home() {
     connections: [],
     stats: emptyStats,
   });
+  const [cryptoStats, setCryptoStats] = useState<CryptoStats>(cryptoService.getStats());
 
   const {
     data: nodes = [],
@@ -102,6 +105,14 @@ export default function Home() {
       unsubscribe();
       locationService.stopWatching();
     };
+  }, []);
+
+  // Subscribe to crypto stats
+  useEffect(() => {
+    const unsubscribe = cryptoService.subscribe((stats) => {
+      setCryptoStats(stats);
+    });
+    return unsubscribe;
   }, []);
 
   const refreshLocation = async () => {
@@ -195,6 +206,65 @@ export default function Home() {
           <div className="space-y-5">
             <LocationStatusCard userLocation={userLocation} onRefresh={refreshLocation} />
             <BluetoothManager />
+
+            {/* Security Status Card */}
+            <Card className="border-slate-200 bg-white shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  Security Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Lock className="h-3.5 w-3.5 text-emerald-600" />
+                    <span className="text-sm font-medium text-emerald-800">Encryption</span>
+                  </div>
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                    AES-256-GCM
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                    <div className="text-xs text-slate-500">Verified Nodes</div>
+                    <div className="mt-0.5 text-lg font-bold text-slate-900">
+                      {cryptoStats.verifiedNodes}/{cryptoStats.totalNodes}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                    <div className="text-xs text-slate-500">Key Pairs</div>
+                    <div className="mt-0.5 text-lg font-bold text-slate-900">
+                      {cryptoStats.totalKeyPairs}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                    <div className="flex items-center gap-1">
+                      <KeyRound className="h-3 w-3 text-slate-400" />
+                      <span className="text-xs text-slate-500">Msgs Signed</span>
+                    </div>
+                    <div className="mt-0.5 text-lg font-bold text-slate-900">
+                      {cryptoStats.messagesSigned}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                    <div className="text-xs text-slate-500">Integrity Fails</div>
+                    <div className={`mt-0.5 text-lg font-bold ${
+                      cryptoStats.integrityFailures > 0 ? 'text-red-600' : 'text-emerald-600'
+                    }`}>
+                      {cryptoStats.integrityFailures}
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                  <div className="text-xs text-slate-500">Signing Algorithm</div>
+                  <div className="mt-0.5 text-sm font-semibold text-slate-800">ECDSA P-256 + SHA-256</div>
+                </div>
+              </CardContent>
+            </Card>
+
             <EmergencyActionsCard />
           </div>
         </div>

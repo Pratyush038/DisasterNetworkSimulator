@@ -10,12 +10,15 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock,
+  KeyRound,
+  Lock,
   MapPin,
   Play,
   Radio,
   RotateCcw,
   Route,
   ShieldAlert,
+  ShieldCheck,
   Truck,
   Users,
   Wifi,
@@ -100,6 +103,12 @@ const steps = [
     route: ["hospital", "backup", "supply", "rv-base"],
     metric: "Service preserved",
   },
+  {
+    title: "Secure Channel Verified",
+    detail: "All messages are signed with ECDSA P-256 and encrypted with AES-256-GCM. Node identities verified via public-key authentication.",
+    route: ["rv-base", "gate", "camp", "supply"],
+    metric: "End-to-end encrypted",
+  },
 ];
 
 const incidents = [
@@ -138,6 +147,12 @@ export default function Simulation() {
   const deliveryProgress = Math.round(((stepIndex + 1) / steps.length) * 100);
   const deliveredPackets = 18 + stepIndex * 11;
   const averageLatency = 96 - stepIndex * 9;
+  const isSecurityStep = stepIndex === steps.length - 1;
+  // Crypto is shown as "active" once we reach step 6 or after
+  const cryptoActive = stepIndex >= 5;
+  // Show progressive crypto stats based on step
+  const signedCount = Math.min(stepIndex + 1, steps.length) * 35;
+  const encryptedCount = Math.min(stepIndex + 1, steps.length) * 35;
   
   const handleRestart = () => {
     setStepIndex(0);
@@ -160,6 +175,13 @@ export default function Simulation() {
           (link.to === nodeId && link.from === nextNodeId))
       );
     });
+  };
+
+  const getLinkMidpoint = (link: ScenarioLink) => {
+    const from = nodeById.get(link.from);
+    const to = nodeById.get(link.to);
+    if (!from || !to) return { x: 0, y: 0 };
+    return { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
   };
 
   return (
@@ -233,7 +255,7 @@ export default function Simulation() {
                   <ResultMetric icon={Wifi} label="Network Reachability" value="87.5%" color="blue" />
                   <ResultMetric icon={Clock} label="Avg Latency" value="24ms" color="purple" />
                   <ResultMetric icon={Truck} label="Assets Dispatched" value="2" color="emerald" />
-                  <ResultMetric icon={MapPinCheck} label="Coverage Area" value="15.3 km²" color="rose" />
+                  <ResultMetric icon={Lock} label="Encryption" value="AES-256" color="rose" />
                 </div>
               </CardContent>
             </Card>
@@ -301,6 +323,21 @@ export default function Simulation() {
               <Card className="rounded-lg border-white/10 bg-white/[0.04] text-white">
                 <CardHeader>
                   <CardTitle className="flex items-center text-white">
+                    <ShieldCheck className="mr-2 h-5 w-5 text-cyan-200" />
+                    Cryptographic Security
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <ResultRow label="Messages Signed" value="210/210" detail="ECDSA P-256 + SHA-256" />
+                  <ResultRow label="Messages Encrypted" value="210/210" detail="AES-256-GCM" />
+                  <ResultRow label="Node Keys" value="8 pairs" detail="ECDSA P-256 keypairs" />
+                  <ResultRow label="Integrity Failures" value="0" detail="No tampered messages" />
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-lg border-white/10 bg-white/[0.04] text-white">
+                <CardHeader>
+                  <CardTitle className="flex items-center text-white">
                     <Target className="mr-2 h-5 w-5 text-rose-200" />
                     Operational Summary
                   </CardTitle>
@@ -338,6 +375,9 @@ export default function Simulation() {
                 <p>
                   <strong className="text-white">5. Recovery:</strong> Backup relay maintains hospital connectivity despite infrastructure damage
                 </p>
+                <p>
+                  <strong className="text-white">6. Security:</strong> All messages signed (ECDSA) and encrypted (AES-256-GCM), node identities verified
+                </p>
                 <Button
                   variant="outline"
                   className="mt-4 w-full border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white"
@@ -370,26 +410,55 @@ export default function Simulation() {
           <CardContent className="p-0">
             <div className="relative aspect-[16/10] min-h-[26rem] overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(59,130,246,0.18),transparent_34%),linear-gradient(135deg,#111827,#020617)]">
               <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
+                {/* SVG Defs for crypto glow filters */}
+                <defs>
+                  <filter id="crypto-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="0.8" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                  <linearGradient id="encrypted-link" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#06b6d4" />
+                    <stop offset="50%" stopColor="#22d3ee" />
+                    <stop offset="100%" stopColor="#06b6d4" />
+                  </linearGradient>
+                </defs>
+
                 {links.map((link) => {
                   const from = nodeById.get(link.from);
                   const to = nodeById.get(link.to);
                   if (!from || !to) return null;
 
                   const active = isActiveLink(link);
+                  const showEncrypted = isSecurityStep && active;
 
                   return (
-                    <line
-                      key={`${link.from}-${link.to}`}
-                      x1={from.x}
-                      y1={from.y}
-                      x2={to.x}
-                      y2={to.y}
-                      stroke={active ? "#38bdf8" : link.active ? "#475569" : "#ef4444"}
-                      strokeWidth={active ? 0.9 : 0.35}
-                      strokeDasharray={link.active ? (active ? "2 1.2" : undefined) : "1.5 1.5"}
-                      opacity={active ? 1 : 0.62}
-                      className={active ? "simulation-flow" : undefined}
-                    />
+                    <g key={`${link.from}-${link.to}`}>
+                      <line
+                        x1={from.x}
+                        y1={from.y}
+                        x2={to.x}
+                        y2={to.y}
+                        stroke={showEncrypted ? "url(#encrypted-link)" : active ? "#38bdf8" : link.active ? "#475569" : "#ef4444"}
+                        strokeWidth={showEncrypted ? 1.1 : active ? 0.9 : 0.35}
+                        strokeDasharray={link.active ? (active ? "2 1.2" : undefined) : "1.5 1.5"}
+                        opacity={active ? 1 : 0.62}
+                        className={active ? "simulation-flow" : undefined}
+                        filter={showEncrypted ? "url(#crypto-glow)" : undefined}
+                      />
+                      {/* Lock icon on encrypted links */}
+                      {showEncrypted && (() => {
+                        const mid = getLinkMidpoint(link);
+                        return (
+                          <g className="crypto-lock-appear">
+                            <circle cx={mid.x} cy={mid.y} r="2.2" fill="#0e7490" fillOpacity="0.9" stroke="#22d3ee" strokeWidth="0.35" />
+                            <text x={mid.x} y={mid.y + 0.9} textAnchor="middle" fontSize="2.2" fill="#ecfeff">🔒</text>
+                          </g>
+                        );
+                      })()}
+                    </g>
                   );
                 })}
                 {nodes.map((node) => {
@@ -403,37 +472,86 @@ export default function Simulation() {
 
                   return (
                     <g key={node.id}>
+                      {/* Security step: cyan shield ring around route nodes */}
+                      {isSecurityStep && isRouteNode && (
+                        <circle cx={node.x} cy={node.y} r="6.5" fill="none" stroke="#06b6d4" strokeWidth="0.4" strokeDasharray="1.5 1" className="crypto-shield-ring" />
+                      )}
                       {isRouteNode && (
-                        <circle cx={node.x} cy={node.y} r="5.8" fill="none" stroke="#38bdf8" strokeWidth="0.65" className="simulation-pulse" />
+                        <circle cx={node.x} cy={node.y} r="5.8" fill="none" stroke={isSecurityStep ? "#22d3ee" : "#38bdf8"} strokeWidth="0.65" className="simulation-pulse" />
                       )}
                       <circle cx={node.x} cy={node.y} r="3.5" fill={fill} stroke="#ffffff" strokeWidth="0.65" />
+                      {/* Shield icon on verified nodes during security step */}
+                      {isSecurityStep && isRouteNode && node.status !== "offline" && (
+                        <g className="crypto-lock-appear">
+                          <text x={node.x - 1.2} y={node.y - 5} fontSize="2.8" fill="#22d3ee">🛡️</text>
+                        </g>
+                      )}
                       <text x={node.x + 4.8} y={node.y + 0.6} fontSize="2.55" fill="#e2e8f0">
                         {node.name}
                       </text>
-                      <text x={node.x + 4.8} y={node.y + 3.9} fontSize="1.9" fill="#94a3b8">
-                        {node.role}
+                      <text x={node.x + 4.8} y={node.y + 3.9} fontSize="1.9" fill={isSecurityStep && isRouteNode ? "#67e8f9" : "#94a3b8"}>
+                        {isSecurityStep && isRouteNode ? "Verified ✓" : node.role}
                       </text>
                     </g>
                   );
                 })}
               </svg>
 
+              {/* Step info overlay — top left */}
               <div className="absolute left-5 top-5 rounded-lg border border-white/10 bg-slate-950/75 p-4 backdrop-blur">
                 <div className="text-sm font-semibold">{activeStep.title}</div>
                 <div className="mt-1 text-xs text-white/50">{activeStep.metric}</div>
               </div>
 
+              {/* Encryption status overlay — top right */}
+              <div className={`absolute right-5 top-5 rounded-lg border px-3 py-2 backdrop-blur transition-all duration-500 ${
+                isSecurityStep
+                  ? "border-cyan-500/40 bg-cyan-950/80 shadow-[0_0_20px_rgba(6,182,212,0.2)]"
+                  : "border-white/10 bg-slate-950/75"
+              }`}>
+                <div className="flex items-center gap-2">
+                  <div className={`h-2 w-2 rounded-full ${
+                    isSecurityStep ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.6)] animate-pulse" : "bg-emerald-400"
+                  }`} />
+                  <span className={`text-xs font-medium ${
+                    isSecurityStep ? "text-cyan-200" : "text-white/60"
+                  }`}>
+                    {isSecurityStep ? "🔐 E2E Encrypted" : "🔑 Keys Active"}
+                  </span>
+                </div>
+                {isSecurityStep && (
+                  <div className="mt-1.5 space-y-0.5">
+                    <div className="text-[10px] text-cyan-300/70">ECDSA P-256 · AES-256-GCM</div>
+                    <div className="text-[10px] text-cyan-300/70">{nodes.filter(n => n.status !== 'offline').length} nodes verified</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Route badges — bottom bar */}
               <div className="absolute bottom-5 left-5 right-5 rounded-lg border border-white/10 bg-slate-950/75 p-4 backdrop-blur">
                 <div className="flex flex-wrap items-center gap-2">
                   {activeStep.route.map((nodeId, index) => (
                     <div key={`${nodeId}-${index}`} className="flex items-center gap-2">
-                      <Badge className="rounded-full bg-white/10 text-white hover:bg-white/10">
-                        {nodeById.get(nodeId)?.name || nodeId}
+                      <Badge className={`rounded-full ${
+                        isSecurityStep
+                          ? "bg-cyan-500/20 text-cyan-100 border border-cyan-500/30 hover:bg-cyan-500/20"
+                          : "bg-white/10 text-white hover:bg-white/10"
+                      }`}>
+                        {isSecurityStep && "🔒 "}{nodeById.get(nodeId)?.name || nodeId}
                       </Badge>
-                      {index < activeStep.route.length - 1 && <Route className="h-4 w-4 text-blue-200" />}
+                      {index < activeStep.route.length - 1 && (
+                        isSecurityStep
+                          ? <Lock className="h-3.5 w-3.5 text-cyan-300" />
+                          : <Route className="h-4 w-4 text-blue-200" />
+                      )}
                     </div>
                   ))}
                 </div>
+                {isSecurityStep && (
+                  <div className="mt-2 text-[10px] text-cyan-300/60">
+                    All packets: signed → encrypted → transmitted → decrypted → verified
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -497,20 +615,83 @@ export default function Simulation() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-lg border-white/10 bg-white/[0.04] text-white">
+          {/* Channel Security Card */}
+          <Card className={`rounded-lg text-white transition-all duration-500 ${
+            isSecurityStep
+              ? "border-cyan-500/30 bg-cyan-500/[0.06] shadow-[0_0_30px_rgba(6,182,212,0.08)]"
+              : "border-white/10 bg-white/[0.04]"
+          }`}>
             <CardHeader>
               <CardTitle className="flex items-center text-white">
-                <ShieldAlert className="mr-2 h-5 w-5 text-rose-200" />
-                Incident Board
+                <ShieldCheck className={`mr-2 h-5 w-5 ${
+                  isSecurityStep ? "text-cyan-300" : "text-cyan-200/60"
+                }`} />
+                Channel Security
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-3">
-              {incidents.map((incident) => (
-                <div key={incident.label} className={`rounded-lg border p-3 ${incident.tone}`}>
-                  <div className="text-xs font-medium opacity-75">{incident.label}</div>
-                  <div className="mt-1 text-sm font-bold">{incident.value}</div>
+            <CardContent className="grid gap-2">
+              <div className={`flex items-center justify-between rounded-lg border p-2.5 transition-all duration-500 ${
+                isSecurityStep
+                  ? "border-cyan-500/30 bg-cyan-500/10"
+                  : "border-white/10 bg-white/[0.04]"
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Lock className={`h-3.5 w-3.5 ${isSecurityStep ? "text-cyan-300" : "text-white/40"}`} />
+                  <span className="text-xs text-white/70">Encryption</span>
                 </div>
-              ))}
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  isSecurityStep
+                    ? "bg-cyan-500/20 text-cyan-200"
+                    : "bg-white/10 text-white/50"
+                }`}>
+                  AES-256-GCM
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className={`rounded-lg border p-2 transition-all duration-500 ${
+                  isSecurityStep ? "border-cyan-500/20 bg-cyan-500/5" : "border-white/10 bg-white/[0.03]"
+                }`}>
+                  <div className="text-[10px] text-white/50">Signed</div>
+                  <div className={`text-sm font-bold ${isSecurityStep ? "text-cyan-200" : "text-white/80"}`}>{signedCount}</div>
+                </div>
+                <div className={`rounded-lg border p-2 transition-all duration-500 ${
+                  isSecurityStep ? "border-cyan-500/20 bg-cyan-500/5" : "border-white/10 bg-white/[0.03]"
+                }`}>
+                  <div className="text-[10px] text-white/50">Encrypted</div>
+                  <div className={`text-sm font-bold ${isSecurityStep ? "text-cyan-200" : "text-white/80"}`}>{encryptedCount}</div>
+                </div>
+                <div className={`rounded-lg border p-2 transition-all duration-500 ${
+                  isSecurityStep ? "border-cyan-500/20 bg-cyan-500/5" : "border-white/10 bg-white/[0.03]"
+                }`}>
+                  <div className="text-[10px] text-white/50">Key Pairs</div>
+                  <div className={`text-sm font-bold ${isSecurityStep ? "text-cyan-200" : "text-white/80"}`}>8</div>
+                </div>
+                <div className={`rounded-lg border p-2 transition-all duration-500 ${
+                  isSecurityStep ? "border-emerald-500/20 bg-emerald-500/5" : "border-white/10 bg-white/[0.03]"
+                }`}>
+                  <div className="text-[10px] text-white/50">Integrity</div>
+                  <div className={`text-sm font-bold ${isSecurityStep ? "text-emerald-300" : "text-white/80"}`}>✓ 0 fails</div>
+                </div>
+              </div>
+              <div className={`rounded-lg border p-2 transition-all duration-500 ${
+                isSecurityStep ? "border-cyan-500/20 bg-cyan-500/5" : "border-white/10 bg-white/[0.03]"
+              }`}>
+                <div className="text-[10px] text-white/50">Signing Algorithm</div>
+                <div className={`text-xs font-semibold ${isSecurityStep ? "text-cyan-200" : "text-white/60"}`}>
+                  ECDSA P-256 + SHA-256
+                </div>
+              </div>
+              {isSecurityStep && (
+                <div className="mt-1 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-2">
+                  <div className="flex items-center gap-1.5">
+                    <KeyRound className="h-3 w-3 text-cyan-400" />
+                    <span className="text-[10px] font-medium text-cyan-300">Pipeline Active</span>
+                  </div>
+                  <div className="mt-1 text-[9px] leading-relaxed text-cyan-200/60">
+                    Sign → Encrypt → Route → Decrypt → Verify
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -527,6 +708,15 @@ export default function Simulation() {
           animation: simulationPulse 1.4s ease-in-out infinite;
         }
 
+        .crypto-shield-ring {
+          animation: cryptoShieldSpin 4s linear infinite;
+          transform-origin: center;
+        }
+
+        .crypto-lock-appear {
+          animation: cryptoLockAppear 0.6s ease-out forwards;
+        }
+
         @keyframes simulationDash {
           from { stroke-dashoffset: 0; }
           to { stroke-dashoffset: -10; }
@@ -535,6 +725,17 @@ export default function Simulation() {
         @keyframes simulationPulse {
           0%, 100% { opacity: 0.35; transform: scale(1); transform-origin: center; }
           50% { opacity: 1; transform: scale(1.22); transform-origin: center; }
+        }
+
+        @keyframes cryptoShieldSpin {
+          from { stroke-dashoffset: 0; }
+          to { stroke-dashoffset: -20; }
+        }
+
+        @keyframes cryptoLockAppear {
+          0% { opacity: 0; transform: scale(0.3); }
+          60% { opacity: 1; transform: scale(1.15); }
+          100% { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>
