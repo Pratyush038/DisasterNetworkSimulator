@@ -75,4 +75,5 @@ server/public/
 *.pptx
 # Ignore presentation guides
 *.md
+!README.md
 .config/
